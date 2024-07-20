@@ -96,7 +96,6 @@ class MapsFragment : Fragment(), OnMapReadyCallback {
             Manifest.permission.ACCESS_FINE_LOCATION
         ) == PackageManager.PERMISSION_GRANTED
 
-    @SuppressLint("MissingPermission")
     private fun getLastLocation() {
         fusedLocationProviderClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
             .addOnSuccessListener { location: Location? ->
@@ -123,7 +122,7 @@ class MapsFragment : Fragment(), OnMapReadyCallback {
     }
 
     private fun updateMapLocation(location: LatLng) {
-        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(location, 15f))
+        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(location, 11f))
     }
 
     private fun addMarkerAtLocation(location: LatLng, title: String) {
