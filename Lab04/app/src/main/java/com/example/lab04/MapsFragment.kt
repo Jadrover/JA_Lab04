@@ -1,26 +1,24 @@
 package com.example.lab04
 
-import android.Manifest.permission.ACCESS_FINE_LOCATION
+import android.Manifest
 import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
-import android.graphics.Color
 import android.location.Location
 import android.os.Bundle
-import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.annotation.DrawableRes
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
-import androidx.core.graphics.drawable.DrawableCompat
 import androidx.fragment.app.Fragment
-import androidx.lifecycle.ViewModelProvider
+import androidx.fragment.app.activityViewModels
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.OnMapReadyCallback
@@ -31,20 +29,17 @@ import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.Marker
 import com.google.android.gms.maps.model.MarkerOptions
 import com.example.lab04.databinding.FragmentMapsBinding
-import com.google.android.gms.location.LocationServices
-import com.google.android.gms.location.Priority
 
 class MapsFragment : Fragment(), OnMapReadyCallback {
 
-    private lateinit var mMap: GoogleMap
     private lateinit var binding: FragmentMapsBinding
+    private lateinit var mMap: GoogleMap
     private lateinit var requestPermissionLauncher: ActivityResultLauncher<String>
-    private lateinit var sharedViewModel: SharedViewModel
-    private var marker: Marker? = null
-
+    private val viewModel: SharedViewModel by activityViewModels()
     private val fusedLocationProviderClient by lazy {
         LocationServices.getFusedLocationProviderClient(requireContext())
     }
+    private var carMarker: Marker? = null
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -57,93 +52,62 @@ class MapsFragment : Fragment(), OnMapReadyCallback {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        sharedViewModel = ViewModelProvider(requireActivity()).get(SharedViewModel::class.java)
-
-        val mapFragment = childFragmentManager
-            .findFragmentById(R.id.map) as SupportMapFragment
+        val mapFragment = childFragmentManager.findFragmentById(R.id.map) as SupportMapFragment
         mapFragment.getMapAsync(this)
 
-        requestPermissionLauncher =
-            registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
-                if (isGranted) {
-                    getLocation()
-                } else {
+        requestPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
+            if (isGranted) {
+                getLastLocation()
+            } else {
+                if (shouldShowRequestPermissionRationale(Manifest.permission.ACCESS_FINE_LOCATION)) {
                     showPermissionRationale {
-                        requestPermissionLauncher.launch(ACCESS_FINE_LOCATION)
+                        requestPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
                     }
                 }
             }
+        }
 
-        binding.btnParkHere.setOnClickListener {
-            if (hasLocationPermission()) {
-                getLastLocationAndPark()
-            } else {
-                requestPermissionLauncher.launch(ACCESS_FINE_LOCATION)
-            }
+        view.findViewById<Button>(R.id.maps_mark_location_button).setOnClickListener {
+            markParkedCar()
         }
     }
 
     override fun onMapReady(googleMap: GoogleMap) {
-        mMap = googleMap.apply {
-            setOnMapClickListener { latLng ->
-                addOrMoveSelectedPositionMarker(latLng)
-            }
+        mMap = googleMap
+
+        mMap.setOnMapClickListener { latLng ->
+            placeCarMarker(latLng)
         }
 
         when {
-            hasLocationPermission() -> getLocation()
-            shouldShowRequestPermissionRationale(ACCESS_FINE_LOCATION) -> {
+            hasLocationPermission() -> getLastLocation()
+            shouldShowRequestPermissionRationale(Manifest.permission.ACCESS_FINE_LOCATION) -> {
                 showPermissionRationale {
-                    requestPermissionLauncher.launch(ACCESS_FINE_LOCATION)
+                    requestPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
                 }
             }
-            else -> requestPermissionLauncher.launch(ACCESS_FINE_LOCATION)
+            else -> requestPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
         }
     }
 
-    private fun getLocation() {
-        fusedLocationProviderClient.lastLocation.addOnSuccessListener { location: Location? ->
-            location?.let {
-                val Colorado = LatLng(39.0, -105.0)
-                updateMapLocation(Colorado)
-                addMarkerAtLocation(Colorado, "Colorado")
+    private fun hasLocationPermission() =
+        ContextCompat.checkSelfPermission(
+            requireContext(),
+            Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+
+    @SuppressLint("MissingPermission")
+    private fun getLastLocation() {
+        fusedLocationProviderClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
+            .addOnSuccessListener { location: Location? ->
+                location?.let {
+                    val currentLocation = LatLng(it.latitude, it.longitude)
+                    updateMapLocation(currentLocation)
+                    addMarkerAtLocation(currentLocation, "Current Location")
+                    mMap.animateCamera(CameraUpdateFactory.zoomTo(15f))
+                }
             }
-        }
     }
-
-    private fun updateMapLocation(location: LatLng) {
-        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(location, 11f))
-    }
-
-    private fun addMarkerAtLocation(
-        location: LatLng, title: String,
-        markerIcon: BitmapDescriptor? = null
-    ) = mMap.addMarker(
-        MarkerOptions().title(title).position(location)
-            .apply { markerIcon?.let { icon(markerIcon) } }
-    )
-
-    private fun getBitmapDescriptorFromVector(@DrawableRes vectorDrawableResourceId: Int): BitmapDescriptor? {
-        val vectorDrawable = ContextCompat.getDrawable(requireContext(), vectorDrawableResourceId)
-        vectorDrawable?.let {
-            it.setBounds(0, 0, it.intrinsicWidth, it.intrinsicHeight)
-            val bitmap = Bitmap.createBitmap(it.intrinsicWidth, it.intrinsicHeight, Bitmap.Config.ARGB_8888)
-            val canvas = Canvas(bitmap)
-            it.draw(canvas)
-            return BitmapDescriptorFactory.fromBitmap(bitmap)
-        }
-        return null
-    }
-
-    private fun addOrMoveSelectedPositionMarker(latLng: LatLng) {
-        if (marker == null) {
-            marker = addMarkerAtLocation(latLng, "Deploy here", getBitmapDescriptorFromVector(R.drawable.target_icon))
-        } else {
-            marker?.apply { position = latLng }
-        }
-    }
-
-    private fun hasLocationPermission() = ContextCompat.checkSelfPermission(requireContext(), ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
     private fun showPermissionRationale(positiveAction: () -> Unit) {
         AlertDialog.Builder(requireContext())
@@ -158,25 +122,46 @@ class MapsFragment : Fragment(), OnMapReadyCallback {
             .create().show()
     }
 
-    @SuppressLint("MissingPermission")
-    private fun getLastLocationAndPark() {
-        fusedLocationProviderClient.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
-            .addOnSuccessListener { location: Location? ->
+    private fun updateMapLocation(location: LatLng) {
+        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(location, 15f))
+    }
+
+    private fun addMarkerAtLocation(location: LatLng, title: String) {
+        mMap.addMarker(MarkerOptions().title(title).position(location))
+    }
+
+    private fun placeCarMarker(location: LatLng) {
+        carMarker?.remove()
+        carMarker = mMap.addMarker(
+            MarkerOptions()
+                .position(location)
+                .title("Your Car")
+                .icon(getBitmapDescriptorFromVector(R.drawable.target_icon))
+        )
+        viewModel.saveParkingLocation(location)
+        updateMapLocation(location)
+    }
+
+    private fun markParkedCar() {
+        fusedLocationProviderClient.getLastLocation()
+            .addOnSuccessListener { location ->
                 location?.let {
-                    val currentLocation = LatLng(it.latitude, it.longitude)
-                    sharedViewModel.saveParkingLocation(currentLocation) // Save location to ViewModel
-                    if (marker != null) {
-                        marker?.position = currentLocation
-                    } else {
-                        marker = mMap.addMarker(
-                            MarkerOptions()
-                                .position(currentLocation)
-                                .title("Parked Car")
-                                .icon(getBitmapDescriptorFromVector(R.drawable.target_icon))
-                        )
-                    }
-                    mMap.animateCamera(CameraUpdateFactory.newLatLngZoom(currentLocation, 15f))
+                    val userLocation = LatLng(it.latitude, it.longitude)
+                    placeCarMarker(userLocation)
                 }
             }
+    }
+
+    private fun getBitmapDescriptorFromVector(vectorResId: Int): BitmapDescriptor? {
+        val vectorDrawable = ContextCompat.getDrawable(requireContext(), vectorResId)
+        vectorDrawable?.setBounds(0, 0, vectorDrawable.intrinsicWidth, vectorDrawable.intrinsicHeight)
+        val bitmap = Bitmap.createBitmap(
+            vectorDrawable!!.intrinsicWidth,
+            vectorDrawable.intrinsicHeight,
+            Bitmap.Config.ARGB_8888
+        )
+        val canvas = Canvas(bitmap)
+        vectorDrawable.draw(canvas)
+        return BitmapDescriptorFactory.fromBitmap(bitmap)
     }
 }

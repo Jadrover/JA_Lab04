@@ -5,29 +5,28 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.fragment.app.Fragment
-import androidx.lifecycle.ViewModelProvider
-import com.example.lab04.databinding.FragmentDetailBinding
+import androidx.fragment.app.activityViewModels
+import androidx.lifecycle.Observer
+import android.widget.TextView
 
 class DetailFragment : Fragment() {
 
-    private lateinit var binding: FragmentDetailBinding
-    private lateinit var sharedViewModel: SharedViewModel
+    private val viewModel: SharedViewModel by activityViewModels()
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View? {
-        binding = FragmentDetailBinding.inflate(inflater, container, false)
-        return binding.root
+        return inflater.inflate(R.layout.fragment_detail, container, false)
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-
-        sharedViewModel = ViewModelProvider(requireActivity()).get(SharedViewModel::class.java)
-
-        sharedViewModel.savedParkingLocation.observe(viewLifecycleOwner, { location ->
-            binding.tvSavedLocation.text = "Saved Location: ${location.latitude}, ${location.longitude}"
+        val locationTextView = view.findViewById<TextView>(R.id.location_text_view)
+        viewModel.savedParkingLocation.observe(viewLifecycleOwner, Observer { location ->
+            location?.let {
+                locationTextView.text = "Saved Location: ${it.latitude}, ${it.longitude}"
+            }
         })
     }
 }
